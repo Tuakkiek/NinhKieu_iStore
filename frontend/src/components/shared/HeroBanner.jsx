@@ -1,179 +1,114 @@
 // ============================================
 // FILE: src/components/shared/HeroBanner.jsx
 // ============================================
+
 import React, { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button.jsx";
-import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const HeroBanner = ({
-  imageSrc,
-  alt,
-  height = 580,
-  title,
-  subtitle,
-  ctaText,
-  ctaLink,
-  className,
-}) => {
-  const bannerRef = useRef(null);
-  const [isVisible, setIsVisible] = useState(false);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsVisible(true);
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    if (bannerRef.current) {
-      observer.observe(bannerRef.current);
-    }
-
-    return () => {
-      if (bannerRef.current) {
-        observer.unobserve(bannerRef.current);
-      }
-    };
-  }, []);
-
+const HeroBanner = ({ imageSrc, alt, height = 600, className }) => {
   return (
     <div
-      ref={bannerRef}
       className={cn("relative w-full overflow-hidden group", className)}
       style={{ height: `${height}px` }}
     >
-      {/* Background Image */}
-      <div className="absolute inset-0">
-        <img
-          src={imageSrc}
-          alt={alt}
-          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-          loading="lazy"
-        />
-      </div>
-
-      {/* Content Overlay */}
-      {(title || subtitle || ctaText) && (
-        <div
-          className={cn(
-            "absolute inset-0 flex flex-col items-center justify-center text-center px-4 transition-all duration-1000",
-            isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-          )}
-        >
-          {ctaText && ctaLink && (
-            <Button
-              variant="default"
-              size="lg"
-              className="mt-96 bg-white/30 text-black hover:bg-white/50 backdrop-blur-lg font-semibold rounded-full px-10 h-14 text-lg transition-all duration-300 hover:scale-105 shadow-lg"
-              onClick={() => (window.location.href = ctaLink)}
-            >
-              {ctaText}
-              <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover/btn:translate-x-1" />
-            </Button>
-          )}
-        </div>
-      )}
+      <img
+        src={imageSrc}
+        alt={alt}
+        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+        loading="lazy"
+      />
     </div>
   );
 };
 
-// Carousel Component
 const HeroBannerCarousel = ({ onSlideChange }) => {
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(1);
+  const [isTransitioning, setIsTransitioning] = useState(true);
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
+  const containerRef = useRef(null);
 
   const banners = [
-    {
-      imageSrc: "/ip17pm.png",
-      alt: "iPhone 17 Pro Max",
-      height: 580,
-      ctaText: "Tìm hiểu thêm",
-      ctaLink: "/products/iphone-17-pro-max",
-    },
-    {
-      imageSrc: "/ipAir.png",
-      alt: "iPhone Air",
-      height: 580,
-      ctaText: "Khám phá ngay",
-      ctaLink: "/products/iphone-air",
-    },
-    {
-      imageSrc: "/ip17.png",
-      alt: "iPhone 17",
-      height: 580,
-      ctaText: "Xem chi tiết",
-      ctaLink: "/products/iphone-17",
-    },
+    { imageSrc: "/ip17pm.png", alt: "iPhone 17 Pro Max", height: 610 },
+    { imageSrc: "/ipAir.png", alt: "iPhone Air", height: 610 },
+    { imageSrc: "/ip17.png", alt: "iPhone 17", height: 610 },
   ];
 
-  // Auto-play functionality
+  const actualCount = banners.length;
+  const extendedBanners = [
+    banners[actualCount - 1], // clone cuối
+    ...banners,
+    banners[0], // clone đầu
+  ];
+
+  // Auto-play: chuyển slide mỗi 5s
   useEffect(() => {
     if (!isAutoPlaying) return;
-
-    const interval = setInterval(() => {
-      setCurrentIndex((prevIndex) => {
-        const newIndex = (prevIndex + 1) % banners.length;
-        if (onSlideChange) onSlideChange(newIndex);
-        return newIndex;
-      });
-    }, 5000);
-
+    const interval = setInterval(() => goToNext(true), 5000);
     return () => clearInterval(interval);
-  }, [isAutoPlaying, banners.length, onSlideChange]);
+  }, [isAutoPlaying]);
+
+  // Khi transition kết thúc → reset index nếu đang ở clone
+  const handleTransitionEnd = () => {
+    if (currentIndex === extendedBanners.length - 1) {
+      // Đang ở clone đầu → nhảy về banner thật đầu tiên
+      setIsTransitioning(false);
+      setCurrentIndex(1);
+    } else if (currentIndex === 0) {
+      // Đang ở clone cuối → nhảy về banner thật cuối cùng
+      setIsTransitioning(false);
+      setCurrentIndex(actualCount);
+    }
+  };
+
+  // Kích hoạt lại transition khi index thay đổi
+  useEffect(() => {
+    if (!isTransitioning) {
+      // Cho DOM update xong, sau đó bật lại transition
+      const id = setTimeout(() => setIsTransitioning(true), 50);
+      return () => clearTimeout(id);
+    }
+  }, [isTransitioning]);
+
+  const goToNext = (auto = false) => {
+    if (!auto) setIsAutoPlaying(false);
+    setCurrentIndex((prev) => prev + 1);
+  };
 
   const goToPrevious = () => {
     setIsAutoPlaying(false);
-    setCurrentIndex((prevIndex) => {
-      const newIndex = prevIndex === 0 ? banners.length - 1 : prevIndex - 1;
-      if (onSlideChange) onSlideChange(newIndex);
-      return newIndex;
-    });
-  };
-
-  const goToNext = () => {
-    setIsAutoPlaying(false);
-    setCurrentIndex((prevIndex) => {
-      const newIndex = (prevIndex + 1) % banners.length;
-      if (onSlideChange) onSlideChange(newIndex);
-      return newIndex;
-    });
+    setCurrentIndex((prev) => prev - 1);
   };
 
   const goToSlide = (index) => {
     setIsAutoPlaying(false);
-    setCurrentIndex(index);
-    if (onSlideChange) onSlideChange(index);
+    setCurrentIndex(index + 1);
   };
 
   return (
     <div className="relative w-full mb-2.5 group/carousel">
-      {/* Carousel Container */}
-      <div className="relative overflow-hidden rounded-none md:rounded-2xl">
+      <div
+        className="relative overflow-hidden rounded-none md:rounded-2xl"
+        ref={containerRef}
+      >
         <div
-          className="flex transition-transform duration-700 ease-in-out"
+          className={cn(
+            "flex",
+isTransitioning && "transition-transform duration-700 ease-in-out"
+          )}
           style={{ transform: `translateX(-${currentIndex * 100}%)` }}
+          onTransitionEnd={handleTransitionEnd}
         >
-          {banners.map((banner, index) => (
+          {extendedBanners.map((banner, index) => (
             <div key={index} className="min-w-full">
-              <HeroBanner
-                imageSrc={banner.imageSrc}
-                alt={banner.alt}
-                height={banner.height}
-                title={banner.title}
-                subtitle={banner.subtitle}
-                ctaText={banner.ctaText}
-                ctaLink={banner.ctaLink}
-              />
+              <HeroBanner {...banner} />
             </div>
           ))}
         </div>
       </div>
 
-      {/* Navigation Arrows */}
+      {/* Nút điều hướng */}
       <Button
         variant="ghost"
         size="icon"
@@ -193,14 +128,14 @@ const HeroBannerCarousel = ({ onSlideChange }) => {
       </Button>
 
       {/* Dots Indicator */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-2 z-10">
+      <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex gap-2 z-10">
         {banners.map((_, index) => (
           <button
             key={index}
             onClick={() => goToSlide(index)}
             className={cn(
               "w-2 h-2 md:w-3 md:h-3 rounded-full transition-all duration-300",
-              currentIndex === index
+              currentIndex - 1 === index
                 ? "bg-white w-6 md:w-8"
                 : "bg-white/50 hover:bg-white/75"
             )}
@@ -209,7 +144,7 @@ const HeroBannerCarousel = ({ onSlideChange }) => {
         ))}
       </div>
 
-      {/* Pause/Play Button */}
+      {/* Nút pause/play */}
       <button
         onClick={() => setIsAutoPlaying(!isAutoPlaying)}
         className="hidden md:block absolute top-4 right-4 bg-black/30 hover:bg-black/50 text-white backdrop-blur-sm rounded-full px-4 py-2 text-sm font-medium opacity-0 group-hover/carousel:opacity-100 transition-opacity duration-300"
