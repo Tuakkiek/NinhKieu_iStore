@@ -40,14 +40,14 @@ const VARIANT_KEY_FIELD = {
 const ProductDetailPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const { addToCart } = useCartStore();
   const { isAuthenticated, user } = useAuthStore();
 
   // Lấy slug từ URL
   const pathParts = location.pathname.split("/").filter(Boolean);
   const categorySlug = pathParts[0];
-  const fullSlug = pathParts.slice(1).join("/"); // Bao gồm cả color + storage nếu có
+  const fullSlug = pathParts.slice(1).join("/");
   const categoryInfo = CATEGORY_MAP[categorySlug];
   const sku = searchParams.get("sku");
 
@@ -77,9 +77,6 @@ const ProductDetailPage = () => {
       }
 
       try {
-        console.log(
-          `Fetching: /${categoryInfo.model}s/${fullSlug}?sku=${sku || ""}`
-        );
         const response = await categoryInfo.api.get(fullSlug, {
           params: { sku: sku || "" },
         });
@@ -97,32 +94,21 @@ const ProductDetailPage = () => {
         setProduct(productData);
         setVariants(variantsList);
 
-        // ✅ XỬ LÝ REDIRECT
         if (res.redirect && res.redirectSlug) {
-          console.log("🔄 Redirect to:", res.redirectSlug);
           const newUrl = `/${categorySlug}/${res.redirectSlug}?sku=${res.redirectSku}`;
           navigate(newUrl, { replace: true });
           return;
         }
 
         let selectedVar = null;
-
-        // 1. Ưu tiên SKU từ URL
         if (sku) {
           selectedVar = variantsList.find((v) => v.sku === sku);
         }
-
-        // 2. Nếu không có SKU → chọn variant đầu tiên có hàng
         if (!selectedVar && !hasHandledDefaultVariant.current) {
-          selectedVar =
-            variantsList.find((v) => v.stock > 0) || variantsList[0];
+          selectedVar = variantsList.find((v) => v.stock > 0) || variantsList[0];
           hasHandledDefaultVariant.current = true;
         }
-
-        // 3. Nếu vẫn không có → lấy variant đầu
-        if (!selectedVar) {
-          selectedVar = variantsList[0];
-        }
+        if (!selectedVar) selectedVar = variantsList[0];
 
         setSelectedVariant(selectedVar);
       } catch (err) {
@@ -138,54 +124,62 @@ const ProductDetailPage = () => {
   }, [fullSlug, sku, categoryInfo, categorySlug, navigate]);
 
   // ============================================
-  // ✅ KHI NGƯỜI DÙNG CHỌN VARIANT → UPDATE URL VỚI VARIANT SLUG
+  // KHI NGƯỜI DÙNG CHỌN VARIANT → UPDATE URL
   // ============================================
   const handleVariantSelect = (variant) => {
     if (!variant || !variant.slug) return;
-
-    console.log("🎯 Selecting variant:", {
-      sku: variant.sku,
-      slug: variant.slug,
-      color: variant.color,
-      storage: variant.storage,
-    });
-
-    // ✅ UPDATE URL: Thay đổi path + query param
     const newUrl = `/${categorySlug}/${variant.slug}?sku=${variant.sku}`;
-    console.log("🔄 Navigating to:", newUrl);
-
-    navigate(newUrl, { replace: false }); // Không replace để có history
+    navigate(newUrl, { replace: false });
     setSelectedVariant(variant);
     setSelectedImage(0);
   };
 
   // ============================================
-  // ADD TO CART
+  // ADD TO CART – MẶC ĐỊNH SỐ LƯỢNG = 1
   // ============================================
   const handleAddToCart = async () => {
     if (!isAuthenticated || user?.role !== "CUSTOMER") {
       toast.error("Vui lòng đăng nhập để thêm vào giỏ hàng");
+      navigate("/login");
       return;
     }
-    if (!selectedVariant) {
-      toast.error("Vui lòng chọn phiên bản sản phẩm");
+
+    if (!selectedVariant || !product?.category) {
+      toast.error("Dữ liệu sản phẩm không hợp lệ");
       return;
     }
+
     if (selectedVariant.stock <= 0) {
       toast.error("Sản phẩm tạm hết hàng");
       return;
     }
 
     setIsAddingToCart(true);
+
     try {
-      const result = await addToCart(selectedVariant._id, 1);
+      const result = await addToCart({
+        variantId: selectedVariant._id,
+        productType: product.category,
+        quantity: 1, // MẶC ĐỊNH 1
+      });
+
       if (result.success) {
-        toast.success("Đã thêm vào giỏ hàng", {
-          description: `${product.name} • ${getVariantLabel(selectedVariant)}`,
+        toast.success("Đã thêm vào giỏ hàng!", {
+          description: (
+            <div>
+              <p className="font-medium">{product.name}</p>
+              <p className="text-sm text-gray-600">
+                {getVariantLabel(selectedVariant)}
+              </p>
+            </div>
+          ),
+          duration: 3000,
         });
+      } else {
+        toast.error(result.message || "Không thể thêm vào giỏ hàng");
       }
     } catch (error) {
-      toast.error("Không thể thêm vào giỏ hàng");
+      toast.error("Lỗi hệ thống, vui lòng thử lại");
     } finally {
       setIsAddingToCart(false);
     }
@@ -392,9 +386,7 @@ const ProductDetailPage = () => {
             <div className="flex flex-wrap gap-2">
               {Object.keys(groupedVariants).map((color) => {
                 const isSelected = selectedVariant?.color === color;
-                const hasStock = groupedVariants[color].some(
-                  (v) => v.stock > 0
-                );
+                const hasStock = groupedVariants[color].some((v) => v.stock > 0);
                 return (
                   <Button
                     key={color}
@@ -472,7 +464,7 @@ const ProductDetailPage = () => {
             </div>
           )}
 
-          {/* ADD TO CART */}
+          {/* ADD TO CART – CHỈ 1 SẢN PHẨM */}
           <div className="space-y-3">
             <Button
               size="lg"
@@ -480,8 +472,17 @@ const ProductDetailPage = () => {
               onClick={handleAddToCart}
               disabled={isAddingToCart || selectedVariant.stock === 0}
             >
-              <ShoppingCart className="w-5 h-5 mr-2" />
-              {isAddingToCart ? "Đang thêm..." : "Thêm vào giỏ hàng"}
+              {isAddingToCart ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent mr-2" />
+                  Đang thêm...
+                </>
+              ) : (
+                <>
+                  <ShoppingCart className="w-5 h-5 mr-2" />
+                  Thêm vào giỏ hàng
+                </>
+              )}
             </Button>
           </div>
 
@@ -520,7 +521,7 @@ const ProductDetailPage = () => {
         </div>
       </div>
 
-      {/* SPECIFICATIONS & DESCRIPTION sections remain the same */}
+      {/* SPECIFICATIONS & DESCRIPTION */}
       <div className="mt-16">
         <h2 className="text-2xl font-bold mb-6">Thông số kỹ thuật</h2>
         <Card className="p-6">

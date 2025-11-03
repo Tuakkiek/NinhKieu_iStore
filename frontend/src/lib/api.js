@@ -1,6 +1,9 @@
 // ============================================
 // FILE: frontend/src/lib/api.js
-// ✅ FIXED: API .get() methods for slug-based queries
+// FIXED: API .get() methods for slug-based queries
+// FIXED: cartAPI: removeItem, updateItem, validateCart
+// FIXED: getAllProductsForCategory route mapping
+// OPTIMIZED: getTopNewProducts with limit
 // ============================================
 
 import axios from "axios";
@@ -25,7 +28,7 @@ api.interceptors.request.use(
           config.headers.Authorization = `Bearer ${token}`;
         }
       } catch (error) {
-        console.error("❌ Error parsing auth-storage:", error);
+        console.error("Error parsing auth-storage:", error);
       }
     }
     return config;
@@ -61,7 +64,6 @@ export const iPhoneAPI = {
   update: (id, data) => api.put(`/iphones/${id}`, data),
   delete: (id) => api.delete(`/iphones/${id}`),
   getVariants: (productId) => api.get(`/iphones/${productId}/variants`),
-  // ✅ FIXED: Get by slug with optional SKU query param
   get: (slug, options = {}) => {
     const { params = {} } = options;
     return api.get(`/iphones/${slug}`, { params });
@@ -150,14 +152,19 @@ export const authAPI = {
 };
 
 // ============================================
-// CART API
+// CART API - ĐÃ SỬA HOÀN CHỈNH
 // ============================================
 export const cartAPI = {
   getCart: () => api.get("/cart"),
   addToCart: (data) => api.post("/cart", data),
-  updateItem: (data) => api.put("/cart", data),
-  removeItem: (variantId) => api.delete(`/cart/${variantId}`),
+  // CẬP NHẬT: Truyền đủ variantId, productType, quantity
+  updateItem: ({ variantId, productType, quantity }) =>
+    api.put("/cart", { variantId, productType, quantity }),
+  // SỬA: Dùng itemId (subdocument _id), không dùng variantId
+  removeItem: (itemId) => api.delete(`/cart/items/${itemId}`),
   clearCart: () => api.delete("/cart"),
+  // THÊM: Validate giỏ hàng trước checkout
+  validateCart: () => api.post("/cart/validate"),
 };
 
 // ============================================
@@ -196,6 +203,7 @@ export const promotionAPI = {
   getActive: () => api.get("/promotions/active"),
   apply: (data) => api.post("/promotions/apply", data),
 };
+
 // ============================================
 // USER API
 // ============================================
@@ -231,21 +239,25 @@ export const analyticsAPI = {
 };
 
 // ============================================
-// HELPER FUNCTIONS
+// HELPER FUNCTIONS - ĐÃ TỐI ƯU
 // ============================================
-export const getTopSelling = async (category) => {
-  try {
-    const response = await analyticsAPI.getTopSellers(category, 10);
-    return response.data?.data || [];
-  } catch (error) {
-    console.error("Error fetching top selling:", error);
-    return [];
-  }
+
+// Map category key → backend endpoint
+const categoryEndpointMap = {
+  iphone: "iphones",
+  ipad: "ipads",
+  mac: "macs",
+  airpods: "airpods",
+  applewatch: "applewatches",
+  accessory: "accessories",
 };
 
 export const getAllProductsForCategory = async (cat) => {
+  const endpoint = categoryEndpointMap[cat.toLowerCase()];
+  if (!endpoint) return [];
+
   try {
-    const response = await api.get(`/${cat}`);
+    const response = await api.get(`/${endpoint}`);
     const data = response.data?.data;
     return data?.products || data || [];
   } catch (error) {
@@ -254,25 +266,38 @@ export const getAllProductsForCategory = async (cat) => {
   }
 };
 
+// TỐI ƯU: Lấy 3 sản phẩm mới nhất mỗi category → tổng 18 → sort → lấy 10
 export const getTopNewProducts = async () => {
-  const categories = [
-    "iphones",
-    "ipads",
-    "macs",
-    "airpods",
-    "applewatches",
-    "accessories",
-  ];
+  const categories = Object.values(categoryEndpointMap);
 
   try {
-    const allProducts = (
-      await Promise.all(categories.map(getAllProductsForCategory))
-    ).flat();
+    const promises = categories.map((endpoint) =>
+      api
+        .get(`/${endpoint}`, {
+          params: { limit: 3, sort: "-createdAt" },
+        })
+        .then((res) => res.data?.data?.products || [])
+    );
 
-    allProducts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    return allProducts.slice(0, 10).map((p) => p._id?.toString());
+    const results = await Promise.all(promises);
+    const allProducts = results.flat();
+
+    return allProducts
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 10)
+      .map((p) => p._id?.toString());
   } catch (error) {
     console.error("Error fetching top new products:", error);
+    return [];
+  }
+};
+
+export const getTopSelling = async (category) => {
+  try {
+    const response = await analyticsAPI.getTopSellers(category, 10);
+    return response.data?.data || [];
+  } catch (error) {
+    console.error("Error fetching top selling:", error);
     return [];
   }
 };

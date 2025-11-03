@@ -1,6 +1,7 @@
 // ============================================
 // FILE: frontend/src/components/shared/ProductCard.jsx
-// ✅ FIXED: Use variant.slug instead of generating slug
+// FIXED: Use variant.slug instead of generating slug
+// FIXED: Map product.category → productType (Accessories → Accessory)
 // ============================================
 
 import React, { useState, useEffect } from "react";
@@ -23,6 +24,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+
+// === ÁNH XẠ: category (UI) → productType (Backend) ===
+const CATEGORY_TO_TYPE_MAP = {
+  iPhone: "iPhone",
+  iPad: "iPad",
+  Mac: "Mac",
+  AirPods: "AirPods",
+  AppleWatch: "AppleWatch",
+  Accessories: "Accessory", // ← SỬA CHÍNH Ở ĐÂY
+};
 
 // Variant key field per category
 const VARIANT_KEY_FIELD = {
@@ -85,14 +96,14 @@ const ProductCard = ({
       return;
     }
 
-    // ✅ Ưu tiên: stock > 0 + có sku + có slug
+    // Ưu tiên: stock > 0 + có sku + có slug
     let variant = safeVariants.find((v) => v.stock > 0 && v.sku && v.slug);
     if (!variant) variant = safeVariants.find((v) => v.sku && v.slug); // có sku + slug dù hết hàng
     if (!variant) variant = safeVariants.find((v) => v.sku); // chỉ có sku (sẽ dùng baseSlug)
     if (!variant) variant = safeVariants[0]; // fallback
 
     setSelectedVariant(variant);
-    // ✅ Sẵn sàng nếu có (SKU + slug) HOẶC (SKU + baseSlug)
+    // Sẵn sàng nếu có (SKU + slug) HOẶC (SKU + baseSlug)
     setIsVariantReady(!!(variant?.sku && (variant?.slug || product.baseSlug)));
 
     // DEBUG LOG
@@ -187,28 +198,45 @@ const ProductCard = ({
     }
   };
 
-  // === 9. Thêm vào giỏ hàng ===
+  // === 9. Thêm vào giỏ hàng (ĐÃ SỬA: DÙNG MAP ĐÚNG productType) ===
   const handleAddToCart = async (e) => {
     e.stopPropagation();
+    e.preventDefault(); // ← Ngăn click đúp
+
+    // 1. Kiểm tra đăng nhập + role
     if (!isAuthenticated || user?.role !== "CUSTOMER") {
       navigate("/login");
       return;
     }
 
-    if (!selectedVariant || selectedVariant.stock <= 0) {
+    // 2. Kiểm tra variant + stock
+    if (!selectedVariant) {
+      toast.error("Vui lòng chọn phiên bản");
+      return;
+    }
+    if (selectedVariant.stock <= 0) {
       toast.error("Sản phẩm tạm hết hàng");
       return;
     }
 
     setIsAdding(true);
     try {
-      const result = await addToCart(selectedVariant._id, 1);
-      if (result.success) {
+      // SỬA: Dùng ánh xạ đúng productType
+      const productType = CATEGORY_TO_TYPE_MAP[product.category] || product.category;
+
+      const result = await addToCart({
+        variantId: selectedVariant._id,
+        productType, // ← ĐÚNG: "Accessory" thay vì "Accessories"
+        quantity: 1,
+      });
+
+      if (result?.success) {
         toast.success("Đã thêm vào giỏ hàng", {
           description: `${product.name} • ${getVariantLabel(selectedVariant)}`,
         });
       }
-    } catch {
+    } catch (error) {
+      console.error("Add to cart error:", error);
       toast.error("Không thể thêm vào giỏ hàng");
     } finally {
       setIsAdding(false);
@@ -233,7 +261,6 @@ const ProductCard = ({
 
   // === 11. Navigate - Hỗ trợ cả baseSlug và variant slug ===
   const handleCardClick = () => {
-
     const categoryPath = {
       iPhone: "dien-thoai",
       iPad: "may-tinh-bang",
@@ -248,23 +275,23 @@ const ProductCard = ({
       return;
     }
 
-    // ✅ Ưu tiên: Dùng variant.slug nếu có
+    // Ưu tiên: Dùng variant.slug nếu có
     if (selectedVariant?.sku && selectedVariant?.slug) {
       const url = `/${categoryPath}/${selectedVariant.slug}?sku=${selectedVariant.sku}`;
-      console.log("✅ Navigating to variant slug:", url);
+      console.log("Navigating to variant slug:", url);
       navigate(url);
       return;
     }
 
-    // ✅ Fallback: Dùng baseSlug (sẽ redirect đến variant đầu tiên)
+    // Fallback: Dùng baseSlug (sẽ redirect đến variant đầu tiên)
     if (product.baseSlug) {
       const url = `/${categoryPath}/${product.baseSlug}`;
-      console.log("✅ Navigating to baseSlug (will redirect):", url);
+      console.log("Navigating to baseSlug (will redirect):", url);
       navigate(url);
       return;
     }
 
-    // ❌ Không có slug nào
+    // Không có slug nào
     console.warn("Cannot navigate: no slug available", {
       product,
       selectedVariant,

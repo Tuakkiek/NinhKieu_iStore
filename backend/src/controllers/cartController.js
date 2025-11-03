@@ -1,6 +1,7 @@
 // ============================================
 // FILE: backend/src/controllers/cartController.js
-// ✅ UPDATED: Multi-model support for Cart
+// UPDATED: Hiển thị đầy đủ thông tin trong giỏ hàng
+// FIXED: Trả image (singular) + variantLabel chi tiết
 // ============================================
 import Cart from "../models/Cart.js";
 import IPhone, { IPhoneVariant } from "../models/IPhone.js";
@@ -23,7 +24,20 @@ const getModelsByType = (productType) => {
   return models[productType] || null;
 };
 
-// Helper: Populate cart items với thông tin chi tiết
+// Helper: Tạo variantLabel thông minh
+const getVariantLabel = (variant) => {
+  if (!variant) return "";
+  const parts = [];
+  if (variant.color) parts.push(variant.color);
+  if (variant.storage) parts.push(variant.storage);
+  if (variant.ram) parts.push(`${variant.ram} RAM`);
+  if (variant.cpuGpu) parts.push(variant.cpuGpu);
+  if (variant.connectivity) parts.push(variant.connectivity);
+  if (variant.variantName && !parts.includes(variant.variantName)) parts.push(variant.variantName);
+  return parts.length > 0 ? parts.join(" • ") : "";
+};
+
+// Helper: Populate cart items với thông tin CHI TIẾT + ẢNH
 const populateCartItems = async (cart) => {
   const populatedItems = [];
 
@@ -52,23 +66,31 @@ const populateCartItems = async (cart) => {
         productId: product._id,
         variantId: variant._id,
         productType: item.productType,
+
+        // THÔNG TIN SẢN PHẨM
         productName: product.name,
-        productModel: product.model,
-        productSlug: product.slug || product.baseSlug,
-        variantSlug: variant.slug,
-        variantSku: variant.sku,
-        variantColor: variant.color,
-        variantStorage: variant.storage,
-        variantName: variant.variantName,
-        variantConnectivity: variant.connectivity,
-        variantCpuGpu: variant.cpuGpu,
-        variantRam: variant.ram,
-        quantity: item.quantity,
+        productModel: product.model || "",
+
+        // THÔNG TIN BIẾN THỂ - CHI TIẾT
+        variantLabel: getVariantLabel(variant),
+        variantColor: variant.color || "",
+        variantStorage: variant.storage || "",
+        variantRam: variant.ram || "",
+        variantCpuGpu: variant.cpuGpu || "",
+        variantConnectivity: variant.connectivity || "",
+        variantName: variant.variantName || "",
+
+        // GIÁ + SỐ LƯỢNG
         price: item.price,
-        originalPrice: variant.originalPrice,
-        stock: variant.stock,
-        images: variant.images || [],
-        productImages: product.images || [],
+        originalPrice: variant.originalPrice || 0,
+        quantity: item.quantity,
+        stock: variant.stock || 0,
+
+        // ẢNH: CHỈ TRẢ 1 ẢNH ĐẦU TIÊN
+        image: variant.images?.[0] || product.images?.[0] || "",
+
+        // SKU
+        sku: variant.sku || "",
       });
     } catch (error) {
       console.error(`Error populating item ${item._id}:`, error);
@@ -136,9 +158,7 @@ export const addToCart = async (req, res) => {
       });
     }
 
-    // Lấy variant info
     const variant = await models.Variant.findById(variantId);
-
     if (!variant) {
       return res.status(404).json({
         success: false,
@@ -146,7 +166,6 @@ export const addToCart = async (req, res) => {
       });
     }
 
-    // Kiểm tra product còn tồn tại
     const product = await models.Product.findById(variant.productId);
     if (!product) {
       return res.status(404).json({
@@ -155,7 +174,6 @@ export const addToCart = async (req, res) => {
       });
     }
 
-    // Kiểm tra status
     if (product.status !== "AVAILABLE") {
       return res.status(400).json({
         success: false,
@@ -163,7 +181,6 @@ export const addToCart = async (req, res) => {
       });
     }
 
-    // Kiểm tra tồn kho
     if (variant.stock < quantity) {
       return res.status(400).json({
         success: false,
@@ -185,7 +202,6 @@ export const addToCart = async (req, res) => {
     if (!cart) {
       cart = await Cart.create({ customerId: req.user._id, items: [itemData] });
     } else {
-      // Kiểm tra xem variant này đã có trong giỏ chưa
       const itemIndex = cart.items.findIndex(
         (item) =>
           item.variantId.toString() === variantId &&
@@ -193,7 +209,6 @@ export const addToCart = async (req, res) => {
       );
 
       if (itemIndex > -1) {
-        // Kiểm tra tổng số lượng sau khi cộng
         const newQuantity = cart.items[itemIndex].quantity + quantity;
         if (newQuantity > variant.stock) {
           return res.status(400).json({
@@ -202,7 +217,7 @@ export const addToCart = async (req, res) => {
           });
         }
         cart.items[itemIndex].quantity = newQuantity;
-        cart.items[itemIndex].price = variant.price; // Cập nhật giá mới nhất
+        cart.items[itemIndex].price = variant.price;
       } else {
         cart.items.push(itemData);
       }
@@ -257,7 +272,6 @@ export const updateCartItem = async (req, res) => {
       });
     }
 
-    // Kiểm tra variant và stock
     const variant = await models.Variant.findById(variantId);
     if (!variant) {
       return res.status(404).json({
@@ -295,10 +309,8 @@ export const updateCartItem = async (req, res) => {
     }
 
     if (quantity === 0) {
-      // Xóa item
       cart.items.splice(itemIndex, 1);
     } else {
-      // Cập nhật số lượng và giá
       cart.items[itemIndex].quantity = quantity;
       cart.items[itemIndex].price = variant.price;
     }

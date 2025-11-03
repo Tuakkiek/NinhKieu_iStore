@@ -1,5 +1,6 @@
 // FILE: src/store/cartStore.js
-// ✅ VARIANTS SUPPORT: addToCart(variantId, quantity)
+// FIXED: addToCart & updateCartItem now require productType
+// FIXED: 400 Bad Request from missing productType
 import { create } from "zustand";
 import { cartAPI } from "@/lib/api";
 
@@ -19,12 +20,16 @@ export const useCartStore = create((set, get) => ({
     }
   },
 
-  // ✅ UPDATED: addToCart nhận variantId thay vì productId
-  addToCart: async (variantId, quantity = 1) => {
+  // FIXED: addToCart nhận { variantId, productType, quantity }
+  addToCart: async ({ variantId, productType, quantity = 1 }) => {
     set({ isLoading: true, error: null });
     try {
-      // ✅ GỬI { variantId, quantity }
-      const response = await cartAPI.addToCart({ variantId, quantity });
+      // GỬI ĐỦ 3 TRƯỜNG: variantId, productType, quantity
+      const response = await cartAPI.addToCart({
+        variantId,
+        productType, // BẮT BUỘC – backend yêu cầu
+        quantity,
+      });
       set({ cart: response.data.data, isLoading: false });
       return { success: true, message: response.data.message };
     } catch (error) {
@@ -34,11 +39,15 @@ export const useCartStore = create((set, get) => ({
     }
   },
 
-  // ✅ UPDATED: updateCartItem nhận variantId
-  updateCartItem: async (variantId, quantity) => {
+  // FIXED: updateCartItem nhận { variantId, productType, quantity }
+  updateCartItem: async ({ variantId, productType, quantity }) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await cartAPI.updateItem({ variantId, quantity });
+      const response = await cartAPI.updateItem({
+        variantId,
+        productType, // BẮT BUỘC
+        quantity,
+      });
       set({ cart: response.data.data, isLoading: false });
       return { success: true };
     } catch (error) {
@@ -48,11 +57,11 @@ export const useCartStore = create((set, get) => ({
     }
   },
 
-  // ✅ UPDATED: removeFromCart nhận variantId
-  removeFromCart: async (variantId) => {
+  // removeFromCart: chỉ cần itemId (subdocument _id), không cần productType
+  removeFromCart: async (itemId) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await cartAPI.removeItem(variantId);
+      const response = await cartAPI.removeItem(itemId);
       set({ cart: response.data.data, isLoading: false });
       return { success: true };
     } catch (error) {
@@ -76,7 +85,7 @@ export const useCartStore = create((set, get) => ({
     }
   },
 
-  // ✅ UPDATED: getTotal - DÙNG variant.price
+  // getTotal - DÙNG variant.price
   getTotal: () => {
     const { cart } = get();
     if (!cart || !cart.items) return 0;

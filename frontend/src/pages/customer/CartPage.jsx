@@ -1,157 +1,204 @@
-// ============================================
-// FILE: src/pages/customer/CartPage.jsx
-// ============================================
-import React, { useEffect } from "react";
+// frontend/src/pages/customer/CartPage.jsx
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Loading } from "@/components/shared/Loading";
-import { Trash2, Minus, Plus, ShoppingBag } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox"; // THÊM IMPORT
 import { useCartStore } from "@/store/cartStore";
+import { useAuthStore } from "@/store/authStore";
 import { formatPrice } from "@/lib/utils";
+import { toast } from "sonner";
+import CartItemCard from "@/components/cart/CartItemCard";
+import { ShoppingBag, ArrowLeft } from "lucide-react";
 
 const CartPage = () => {
   const navigate = useNavigate();
-  const { cart, isLoading, getCart, updateCartItem, removeFromCart, getTotal } = useCartStore();
+  const { isAuthenticated, user } = useAuthStore();
+  const { cart, getCart, getTotal, getItemCount, clearCart, isLoading, error } = useCartStore();
+
+  // STATE: Danh sách item được chọn
+  const [selectedItems, setSelectedItems] = useState(new Set());
 
   useEffect(() => {
-    getCart();
-  }, []);
+    if (isAuthenticated && user?.role === "CUSTOMER") {
+      getCart();
+    } else {
+      navigate("/login");
+    }
+  }, [isAuthenticated, user, getCart, navigate]);
 
-  const handleUpdateQuantity = async (productId, newQuantity) => {
-    await updateCartItem(productId, newQuantity);
+  useEffect(() => {
+    // Mặc định chọn tất cả khi load
+    if (cart?.items) {
+      const allIds = new Set(cart.items.map(item => item._id));
+      setSelectedItems(allIds);
+    }
+  }, [cart]);
+
+  const handleCheckout = () => {
+    if (selectedItems.size === 0) {
+      toast.error("Vui lòng chọn ít nhất 1 sản phẩm để thanh toán");
+      return;
+    }
+    navigate("/checkout", { state: { selectedItems: Array.from(selectedItems) } });
   };
 
-  const handleRemove = async (productId) => {
-    await removeFromCart(productId);
+  const handleContinueShopping = () => {
+    navigate("/");
   };
 
-  if (isLoading && !cart) {
-    return <Loading />;
+  const toggleItem = (itemId) => {
+    const newSelected = new Set(selectedItems);
+    if (newSelected.has(itemId)) {
+      newSelected.delete(itemId);
+    } else {
+      newSelected.add(itemId);
+    }
+    setSelectedItems(newSelected);
+  };
+
+  const toggleAll = () => {
+    if (selectedItems.size === items.length) {
+      setSelectedItems(new Set());
+    } else {
+      setSelectedItems(new Set(items.map(item => item._id)));
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    toast.error(error);
   }
 
   const items = cart?.items || [];
   const total = getTotal();
+  const itemCount = getItemCount();
+
+  // TÍNH TIỀN CHỌN LỌC
+  const selectedTotal = items
+    .filter(item => selectedItems.has(item._id))
+    .reduce((sum, item) => sum + item.price * item.quantity, 0);
+
+  const selectedCount = selectedItems.size;
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-8">Giỏ hàng của bạn</h1>
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-7xl mx-auto px-4">
+        {/* Header */}
+        <div className="flex items-center gap-4 mb-8">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleContinueShopping}
+            className="rounded-full"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+          <h1 className="text-3xl font-bold text-gray-900">Giỏ hàng của bạn</h1>
+          <div className="flex items-center gap-2 ml-auto">
+            <ShoppingBag className="w-5 h-5 text-gray-600" />
+            <span className="text-sm text-gray-600">{itemCount} sản phẩm</span>
+          </div>
+        </div>
 
-      {items.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <ShoppingBag className="w-16 h-16 text-muted-foreground mb-4" />
-            <h3 className="text-xl font-semibold mb-2">Giỏ hàng trống</h3>
-            <p className="text-muted-foreground mb-6">
-              Bạn chưa có sản phẩm nào trong giỏ hàng
-            </p>
-            <Button onClick={() => navigate("/products")}>
+        {items.length === 0 ? (
+          <Card className="p-12 text-center">
+            <ShoppingBag className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <h2 className="text-xl font-semibold text-gray-700 mb-2">Giỏ hàng trống</h2>
+            <p className="text-gray-500 mb-6">Bạn chưa thêm sản phẩm nào.</p>
+            <Button onClick={handleContinueShopping} size="lg">
               Tiếp tục mua sắm
             </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Cart Items */}
-          <div className="lg:col-span-2 space-y-4">
-            {items.map((item) => (
-              <Card key={item.productId._id}>
-                <CardContent className="p-4">
-                  <div className="flex gap-4">
-                    <img
-                      src={item.productId?.images?.[0] || "/placeholder.png"}
-                      alt={item.productId?.name}
-                      className="w-24 h-24 object-cover rounded-md"
+          </Card>
+        ) : (
+          <>
+            {/* CHỌN TẤT CẢ */}
+            <div className="flex items-center gap-3 mb-4">
+              <Checkbox
+                checked={selectedItems.size === items.length && items.length > 0}
+                onCheckedChange={toggleAll}
+                className="rounded-full"
+              />
+              <label className="text-sm font-medium cursor-pointer" onClick={toggleAll}>
+                Chọn tất cả ({items.length})
+              </label>
+            </div>
+
+            {/* 2 CỘT */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* CỘT 1: DANH SÁCH */}
+              <div className="lg:col-span-2 space-y-4">
+                {items.map((item) => (
+                  <div key={item._id} className="flex items-start gap-3">
+                    <Checkbox
+                      checked={selectedItems.has(item._id)}
+                      onCheckedChange={() => toggleItem(item._id)}
+                      className="mt-6 rounded-full"
                     />
-
                     <div className="flex-1">
-                      <h3 className="font-semibold mb-1">
-                        {item.productId?.name}
-                      </h3>
-                      <p className="text-sm text-muted-foreground mb-2">
-                        {formatPrice(item.price)}
-                      </p>
+                      <CartItemCard item={item} />
+                    </div>
+                  </div>
+                ))}
+              </div>
 
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center border rounded-md">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() =>
-                              handleUpdateQuantity(
-                                item.productId._id,
-                                item.quantity + 1
-                              )
-                            }
-                            disabled={item.quantity >= item.productId?.quantity}
-                          >
-                            <Plus className="h-4 w-4" />
-                          </Button>
-                        </div>
+              {/* CỘT 2: THANH TOÁN */}
+              <div className="lg:col-span-1">
+                <Card className="p-6 sticky top-6">
+                  <h2 className="text-xl font-bold text-gray-900 mb-4">Tóm tắt đơn hàng</h2>
 
-                        <div className="flex items-center gap-4">
-                          <span className="font-semibold">
-                            {formatPrice(item.price * item.quantity)}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleRemove(item.productId._id)}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
+                  <div className="space-y-3 mb-6">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">
+                        Tạm tính ({selectedCount} sản phẩm)
+                      </span>
+                      <span className="font-medium">{formatPrice(selectedTotal)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Phí vận chuyển</span>
+                      <span className="font-medium">Miễn phí</span>
+                    </div>
+                    <div className="border-t pt-3">
+                      <div className="flex justify-between">
+                        <span className="text-lg font-semibold">Tổng cộng</span>
+                        <span className="text-2xl font-bold text-red-600">
+                          {formatPrice(selectedTotal)}
+                        </span>
                       </div>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
 
-          {/* Order Summary */}
-          <div className="lg:col-span-1">
-            <Card className="sticky top-20">
-              <CardContent className="p-6 space-y-4">
-                <h3 className="text-xl font-semibold">Tóm tắt đơn hàng</h3>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Tạm tính</span>
-                    <span>{formatPrice(total)}</span>
+                  <div className="space-y-3">
+                    <Button
+                      size="lg"
+                      className="w-full bg-red-600 hover:bg-red-700 text-white"
+                      onClick={handleCheckout}
+                      disabled={selectedCount === 0}
+                    >
+                      Thanh toán ({selectedCount})
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="lg"
+                      className="w-full"
+                      onClick={clearCart}
+                    >
+                      Xóa tất cả
+                    </Button>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Phí vận chuyển</span>
-                    <span className="text-green-600">Miễn phí</span>
-                  </div>
-                  <div className="border-t pt-2">
-                    <div className="flex justify-between text-lg font-semibold">
-                      <span>Tổng cộng</span>
-                      <span className="text-primary">{formatPrice(total)}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <Button
-                  className="w-full"
-                  size="lg"
-                  onClick={() => navigate("/checkout")}
-                >
-                  Tiến hành thanh toán
-                </Button>
-
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => navigate("/products")}
-                >
-                  Tiếp tục mua sắm
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      )}
+                </Card>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 };

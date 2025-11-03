@@ -59,70 +59,78 @@ const ProductsPage = () => {
   });
   const [showFilters, setShowFilters] = useState(false);
 
-  // ✅ Fetch products from category APIs
-  const fetchProducts = async () => {
-    setIsLoading(true);
-    try {
-      const params = {
-        page: pagination.page,
-        limit: pagination.limit,
-        search: searchTerm,
-        status: filters.status || undefined,
-        minPrice: filters.minPrice || undefined,
-        maxPrice: filters.maxPrice || undefined,
-        sort: filters.sort,
-        inStock: filters.inStock,
-      };
+ const fetchProducts = async () => {
+  setIsLoading(true);
+  try {
+    const params = {
+      page: pagination.page,
+      limit: pagination.limit,
+      search: searchTerm,
+      status: filters.status || undefined,
+      minPrice: filters.minPrice || undefined,
+      maxPrice: filters.maxPrice || undefined,
+      sort: filters.sort,
+    };
 
-      let allProducts = [];
-      let totalCount = 0;
+    let allProducts = [];
+    let totalCount = 0;
 
-      if (filters.category) {
-        // Fetch from specific category
-        const api = API_MAP[filters.category];
-        if (api) {
-          const response = await api.getAll(params);
-          const data = response.data.data;
-          allProducts = data.products || [];
-          totalCount = data.total || allProducts.length;
-        }
-      } else {
-        // Fetch from all categories
-        const responses = await Promise.all(
-          CATEGORIES.map((cat) =>
-            API_MAP[cat]
-              .getAll({ ...params, limit: 3 })
-              .catch(() => ({ data: { data: { products: [] } } }))
-          )
-        );
+    if (filters.category) {
+      // === FETCH 1 DANH MỤC ===
+      const api = API_MAP[filters.category];
+      if (!api) throw new Error("Category not supported");
 
-        allProducts = responses
-          .flatMap((r) => r.data.data.products || [])
-          .slice(0, pagination.limit);
-        totalCount = allProducts.length;
-      }
+      const response = await api.getAll(params);
+      const data = response.data.data;
 
-      // Add category info and format prices
-      const formattedProducts = allProducts.map((product) => ({
-        ...product,
-        price: product.price || 0,
-        originalPrice: product.originalPrice || 0,
-        hasVariants: (product.variants?.length || 0) > 0,
+      allProducts = (data.products || []).map(p => ({
+        ...p,
+        category: filters.category, // GÁN CHÍNH XÁC
       }));
+      totalCount = data.total || allProducts.length;
 
-      setProducts(formattedProducts);
-      setPagination({
-        ...pagination,
-        totalPages: Math.ceil(totalCount / pagination.limit) || 1,
-        total: totalCount,
-      });
-    } catch (error) {
-      console.error("Error fetching products:", error);
-      setProducts([]);
-    } finally {
-      setIsLoading(false);
+    } else {
+      // === FETCH TẤT CẢ DANH MỤC ===
+      const responses = await Promise.all(
+        CATEGORIES.map(async (cat) => {
+          try {
+            const res = await API_MAP[cat].getAll({ ...params, limit: 3 });
+            return (res.data.data.products || []).map(p => ({
+              ...p,
+              category: cat, // GÁN CHÍNH XÁC
+            }));
+          } catch (error) {
+            console.warn(`Failed to fetch ${cat}:`, error);
+            return [];
+          }
+        })
+      );
+
+      allProducts = responses.flat().slice(0, pagination.limit);
+      totalCount = allProducts.length;
     }
-  };
+
+    // Format
+    const formattedProducts = allProducts.map((product) => ({
+      ...product,
+      price: product.price || 0,
+      originalPrice: product.originalPrice || 0,
+      hasVariants: (product.variants?.length || 0) > 0,
+    }));
+
+    setProducts(formattedProducts);
+    setPagination({
+      ...pagination,
+      totalPages: Math.ceil(totalCount / pagination.limit) || 1,
+      total: totalCount,
+    });
+  } catch (error) {
+    console.error("Error fetching products:", error);
+    setProducts([]);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   useEffect(() => {
     fetchProducts();
